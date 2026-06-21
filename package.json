@@ -1,0 +1,21 @@
+{
+  "name": "annamacharya-university-portal",
+  "version": "1.0.0",
+  "description": "Role-based student, faculty and HOD management portal for Annamacharya University.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "college",
+    "student-management",
+    "faculty-dashboard",
+    "hod-dashboard"
+  ],
+  "author": "Annamacharya University",
+  "license": "MIT"
+}

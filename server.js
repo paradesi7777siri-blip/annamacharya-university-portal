@@ -15,10 +15,10 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24;
 
 const FACULTY_CODE = process.env.FACULTY_REGISTRATION_CODE || "FAC-AU-2026";
 const HOD_CODE = process.env.HOD_REGISTRATION_CODE || "HOD-AU-2026";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@annamacharya.edu.in";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Admin123";
+const ADMIN_KEY_FILE = path.join(DATA_DIR, "admin-key.txt");
 
 const sessions = new Map();
+let cachedAdminKey = null;
 
 function loadEnvFile(filePath) {
   try {
@@ -121,24 +121,22 @@ function clamp(value, min, max) {
   return Math.min(Math.max(toNumber(value), min), max);
 }
 
-function createAdminUser(createdAt = now()) {
+function virtualAdminUser() {
   return {
-    id: "usr-admin-demo",
+    id: "admin-key-session",
     role: "admin",
-    name: "Portal Administrator",
-    email: ADMIN_EMAIL,
+    name: "Portal Admin",
+    email: "",
     username: "admin",
-    phone: "9999999999",
+    phone: "",
     department: "Administration",
     status: "active",
-    createdAt,
-    passwordHash: hashPassword(ADMIN_PASSWORD)
+    createdAt: ""
   };
 }
 
 function createSeedDb() {
   const createdAt = now();
-  const adminUser = createAdminUser(createdAt);
   const studentUser = {
     id: "usr-student-demo",
     role: "student",
@@ -194,7 +192,7 @@ function createSeedDb() {
       version: "1.0.0",
       createdAt
     },
-    users: [adminUser, studentUser, studentUser2, facultyUser, hodUser],
+    users: [studentUser, studentUser2, facultyUser, hodUser],
     students: [
       {
         id: "stu-demo-001",
@@ -337,8 +335,9 @@ function migrateDb(db) {
   db.users ||= [];
   db.students ||= [];
   db.faculty ||= [];
-  if (!db.users.some((user) => user.role === "admin")) {
-    db.users.unshift(createAdminUser());
+  const withoutAdmins = db.users.filter((user) => user.role !== "admin");
+  if (withoutAdmins.length !== db.users.length) {
+    db.users = withoutAdmins;
     changed = true;
   }
   if (db.students.some((student) => student.userId === "usr-student-sample-2") && !db.users.some((user) => user.id === "usr-student-sample-2")) {
@@ -357,6 +356,29 @@ function migrateDb(db) {
     changed = true;
   }
   return changed;
+}
+
+async function getAdminKey() {
+  if (cachedAdminKey) return cachedAdminKey;
+  if (process.env.ADMIN_KEY) {
+    cachedAdminKey = cleanText(process.env.ADMIN_KEY);
+    return cachedAdminKey;
+  }
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try {
+    cachedAdminKey = cleanText(await fs.readFile(ADMIN_KEY_FILE, "utf8"));
+  } catch {
+    cachedAdminKey = `auadm_${crypto.randomBytes(24).toString("hex")}`;
+    await fs.writeFile(ADMIN_KEY_FILE, `${cachedAdminKey}\n`);
+    console.log(`Generated admin key saved to ${ADMIN_KEY_FILE}`);
+  }
+  return cachedAdminKey;
+}
+
+function safeCompare(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function parseCookies(header = "") {
@@ -431,6 +453,7 @@ function getSession(req) {
 function getUserFromRequest(req, db) {
   const session = getSession(req);
   if (!session) return null;
+  if (session.admin) return virtualAdminUser();
   const user = db.users.find((entry) => entry.id === session.userId && entry.status === "active");
   return user || null;
 }
@@ -719,6 +742,9 @@ async function login(req, res, db) {
   const identifier = cleanText(body.identifier).toLowerCase();
   const role = cleanText(body.role).toLowerCase();
   const password = cleanText(body.password);
+  if (role === "admin") {
+    return sendJson(res, 400, { message: "Admin access uses the private /admin key page." });
+  }
   const user = db.users.find((entry) => {
     const identityMatches = entry.email.toLowerCase() === identifier || entry.username.toLowerCase() === identifier;
     const roleMatches = !role || entry.role === role;
@@ -738,6 +764,22 @@ async function login(req, res, db) {
     res,
     200,
     { message: "Login successful.", user: publicUser(user) },
+    { "Set-Cookie": makeCookie(SESSION_COOKIE, sessionId, { maxAge: SESSION_TTL_MS / 1000 }) }
+  );
+}
+
+async function adminLogin(req, res) {
+  const body = await readJson(req);
+  const adminKey = await getAdminKey();
+  if (!safeCompare(cleanText(body.adminKey), adminKey)) {
+    return sendJson(res, 401, { message: "Invalid admin key." });
+  }
+  const sessionId = crypto.randomBytes(32).toString("hex");
+  sessions.set(sessionId, { admin: true, expiresAt: Date.now() + SESSION_TTL_MS });
+  return sendJson(
+    res,
+    200,
+    { message: "Admin access granted.", user: publicUser(virtualAdminUser()) },
     { "Set-Cookie": makeCookie(SESSION_COOKIE, sessionId, { maxAge: SESSION_TTL_MS / 1000 }) }
   );
 }
@@ -814,6 +856,9 @@ async function handleApi(req, res) {
   }
   if (method === "POST" && pathname === "/api/login") {
     return login(req, res, db);
+  }
+  if (method === "POST" && pathname === "/api/admin/login") {
+    return adminLogin(req, res);
   }
   if (method === "POST" && pathname === "/api/logout") {
     const session = getSession(req);

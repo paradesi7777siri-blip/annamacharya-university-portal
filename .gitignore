@@ -1,5 +1,6 @@
 node_modules/
 data/db.json
+data/admin-key.txt
 .env
 *.log
 .DS_Store

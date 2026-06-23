@@ -94,13 +94,29 @@ async function init() {
   try {
     state.config = await api("/api/config");
     const session = await api("/api/me");
+    if (isAdminPath()) {
+      if (session.user?.role === "admin") {
+        state.user = session.user;
+        await refreshDashboard();
+      } else {
+        renderAdminGate();
+      }
+      return;
+    }
     if (session.user) {
       state.user = session.user;
+      if (state.user.role === "admin") {
+        history.replaceState(null, "", "/admin");
+      }
       await refreshDashboard();
       return;
     }
   } catch {
     state.config = { departments: [], courses: [] };
+    if (isAdminPath()) {
+      renderAdminGate();
+      return;
+    }
   }
   renderLanding();
 }
@@ -108,9 +124,16 @@ async function init() {
 async function refreshDashboard() {
   state.dashboard = await api("/api/dashboard");
   state.user = state.dashboard.user;
+  if (state.user?.role === "admin" && !isAdminPath()) {
+    history.replaceState(null, "", "/admin");
+  }
   const allowed = navItems().map((item) => item.id);
   if (!allowed.includes(state.view)) state.view = allowed[0] || "overview";
   renderDashboard();
+}
+
+function isAdminPath() {
+  return window.location.pathname.replace(/\/+$/, "") === "/admin";
 }
 
 function renderLanding() {
@@ -129,7 +152,6 @@ function renderLanding() {
           <a href="#about">About</a>
           <a href="#academics">Academics</a>
           <a href="#support">Support</a>
-          <button class="nav-admin" data-open-auth data-role="admin">${icon("lock")} Admin</button>
         </nav>
       </header>
       <main class="hero">
@@ -165,6 +187,63 @@ function renderLanding() {
   });
 }
 
+function renderAdminGate() {
+  state.notice = null;
+  app.innerHTML = `
+    <div class="auth-page">
+      <header class="auth-topbar">
+        <div class="brand">
+          ${logo("logo1.jpeg")}
+          <div>
+            <strong>Annamacharya University</strong>
+            <span>Private Admin Access</span>
+          </div>
+        </div>
+        <button class="btn ghost" data-home>${icon("home")} Portal</button>
+      </header>
+      <main class="auth-layout">
+        <section class="auth-visual">
+          ${logo("logo1.jpeg")}
+          <h1>Admin Console</h1>
+          <p>This page is available only through the private admin route and a generated admin key. It is not linked from the public portal.</p>
+        </section>
+        <section class="auth-panel">
+          ${noticeHtml()}
+          <div class="form-title">
+            <h2>Enter Admin Key</h2>
+            <p>Use the generated key from your server or deployment environment.</p>
+          </div>
+          <form id="admin-key-form">
+            <div class="form-grid">
+              ${field("Admin Key", "adminKey", "type=\"password\" required autocomplete=\"off\" placeholder=\"auadm_...\"", true)}
+            </div>
+            <div class="form-actions">
+              <button class="btn primary" type="submit">${icon("vpn_key")} Open Admin Dashboard</button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  `;
+  document.querySelector("[data-home]")?.addEventListener("click", () => {
+    history.pushState(null, "", "/");
+    renderLanding();
+  });
+  document.getElementById("admin-key-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const result = await api("/api/admin/login", { method: "POST", body: JSON.stringify(payload) });
+      state.user = result.user;
+      state.view = "overview";
+      await refreshDashboard();
+    } catch (error) {
+      setNotice("error", error.message);
+      renderAdminGate();
+    }
+  });
+}
+
 function departmentOptions(selected = "") {
   return state.config.departments
     .map((department) => `<option value="${html(department)}" ${department === selected ? "selected" : ""}>${html(department)}</option>`)
@@ -189,7 +268,7 @@ function field(label, name, attrs = "", full = false) {
 function loginFields() {
   return `
     <div class="form-grid">
-      ${field("Email or Username", "identifier", `required autocomplete="username" placeholder="${state.role === "admin" ? "admin@annamacharya.edu.in" : "student@annamacharya.edu.in"}"`, true)}
+      ${field("Email or Username", "identifier", "required autocomplete=\"username\" placeholder=\"student@annamacharya.edu.in\"", true)}
       ${field("Password", "password", "type=\"password\" required autocomplete=\"current-password\" placeholder=\"Enter password\"", true)}
     </div>
   `;
@@ -263,12 +342,9 @@ function registerFields() {
 }
 
 function renderAuth() {
-  if (state.role === "admin") state.mode = "login";
   const meta = roleMeta[state.role];
-  const authRoles = state.role === "admin" ? ["admin"] : publicRoles;
-  const authCopy = state.role === "admin"
-    ? "Admin access is private and protected by admin credentials. Registration is disabled for this workspace."
-    : `${html(meta.line)} Registration for faculty and HOD workspaces is protected with official verification codes.`;
+  const authRoles = publicRoles;
+  const authCopy = `${html(meta.line)} Registration for faculty and HOD workspaces is protected with official verification codes.`;
   app.innerHTML = `
     <div class="auth-page">
       <header class="auth-topbar">
@@ -309,7 +385,7 @@ function renderAuth() {
           </div>
           <div class="mode-tabs ${state.role === "admin" ? "single" : ""}">
             <button class="tab ${state.mode === "login" ? "active" : ""}" data-mode="login">${icon("login")} Login</button>
-            ${state.role === "admin" ? "" : `<button class="tab ${state.mode === "register" ? "active" : ""}" data-mode="register">${icon("how_to_reg")} Register</button>`}
+            <button class="tab ${state.mode === "register" ? "active" : ""}" data-mode="register">${icon("how_to_reg")} Register</button>
           </div>
           ${noticeHtml()}
           <div class="form-title">
@@ -335,7 +411,6 @@ function attachAuthEvents() {
   document.querySelectorAll("[data-role], [data-role-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.role = button.dataset.role || button.dataset.roleTab;
-      if (state.role === "admin") state.mode = "login";
       state.notice = null;
       renderAuth();
     });
@@ -633,7 +708,7 @@ function adminContent() {
     </section>
     <section class="section-grid">
       <div class="panel">
-        <div class="section-title"><div><h2>Private Admin Control</h2><p>Only admin credentials can open this workspace.</p></div></div>
+        <div class="section-title"><div><h2>Private Admin Control</h2><p>Only the generated admin key can open this workspace.</p></div></div>
         ${adminUserTable((state.dashboard.users || []).slice(0, 8))}
       </div>
       <div class="panel">
@@ -887,7 +962,11 @@ function attachDashboardEvents() {
     await api("/api/logout", { method: "POST", body: "{}" });
     state.user = null;
     state.dashboard = null;
-    renderLanding();
+    if (isAdminPath()) {
+      renderAdminGate();
+    } else {
+      renderLanding();
+    }
   });
   document.querySelector("[data-search]")?.addEventListener("input", (event) => {
     state.search = event.target.value;

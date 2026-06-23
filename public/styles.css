@@ -94,18 +94,15 @@ a {
 }
 
 .seal {
-  align-items: center;
   aspect-ratio: 1;
-  background: radial-gradient(circle at 35% 30%, #ffffff, #dae1ff 54%, var(--primary));
+  background: #ffffff;
   border: 2px solid var(--gold);
-  border-radius: 50%;
-  color: var(--primary);
-  display: inline-flex;
+  border-radius: 8px;
+  display: block;
   flex: 0 0 auto;
-  font-family: "IBM Plex Sans", sans-serif;
-  font-weight: 700;
   height: 48px;
-  justify-content: center;
+  object-fit: contain;
+  padding: 3px;
   width: 48px;
 }
 
@@ -139,6 +136,19 @@ a {
   text-transform: uppercase;
 }
 
+.landing-nav button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--primary);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 5px;
+  padding: 0;
+  text-transform: uppercase;
+}
+
 .hero {
   align-items: center;
   background-image: linear-gradient(rgba(24, 28, 32, 0.3), rgba(24, 28, 32, 0.88)), var(--hero-image);
@@ -157,9 +167,11 @@ a {
 }
 
 .hero-seal {
-  height: 112px;
+  border-radius: 10px;
+  height: 132px;
   margin: 0 auto 24px;
-  width: 112px;
+  padding: 0;
+  width: 132px;
 }
 
 .hero h1,
@@ -379,6 +391,10 @@ a {
 .mode-tabs {
   grid-template-columns: repeat(2, 1fr);
   margin-top: 16px;
+}
+
+.mode-tabs.single {
+  grid-template-columns: 1fr;
 }
 
 .tab {

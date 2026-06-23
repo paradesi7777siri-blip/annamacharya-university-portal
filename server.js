@@ -15,6 +15,8 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24;
 
 const FACULTY_CODE = process.env.FACULTY_REGISTRATION_CODE || "FAC-AU-2026";
 const HOD_CODE = process.env.HOD_REGISTRATION_CODE || "HOD-AU-2026";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@annamacharya.edu.in";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Admin123";
 
 const sessions = new Map();
 
@@ -37,6 +39,12 @@ function loadEnvFile(filePath) {
 
 const departments = [
   "Computer Science & Engineering",
+  "Artificial Intelligence",
+  "AI & Machine Learning",
+  "AI & Data Science",
+  "Computer Science - Data Science",
+  "Cyber Security",
+  "Information Technology",
   "Electronics & Communication",
   "Electrical & Electronics",
   "Mechanical Engineering",
@@ -46,6 +54,12 @@ const departments = [
 
 const courses = [
   "B.Tech Computer Science",
+  "B.Tech Artificial Intelligence",
+  "B.Tech AI & Machine Learning",
+  "B.Tech AI & Data Science",
+  "B.Tech CSE - Data Science",
+  "B.Tech Cyber Security",
+  "B.Tech Information Technology",
   "B.Tech Electronics",
   "B.Tech Electrical",
   "B.Tech Mechanical",
@@ -88,6 +102,16 @@ function cleanEmail(value) {
   return cleanText(value).toLowerCase();
 }
 
+function normalizePhone(value) {
+  const digits = cleanText(value).replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  return digits;
+}
+
+function isTenDigitPhone(value) {
+  return /^\d{10}$/.test(normalizePhone(value));
+}
+
 function toNumber(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -97,15 +121,31 @@ function clamp(value, min, max) {
   return Math.min(Math.max(toNumber(value), min), max);
 }
 
+function createAdminUser(createdAt = now()) {
+  return {
+    id: "usr-admin-demo",
+    role: "admin",
+    name: "Portal Administrator",
+    email: ADMIN_EMAIL,
+    username: "admin",
+    phone: "9999999999",
+    department: "Administration",
+    status: "active",
+    createdAt,
+    passwordHash: hashPassword(ADMIN_PASSWORD)
+  };
+}
+
 function createSeedDb() {
   const createdAt = now();
+  const adminUser = createAdminUser(createdAt);
   const studentUser = {
     id: "usr-student-demo",
     role: "student",
     name: "John Doe Annamacharya",
     email: "student@annamacharya.edu.in",
     username: "john.doe",
-    phone: "+91 98765 43210",
+    phone: "9876543210",
     department: "Computer Science & Engineering",
     status: "active",
     createdAt,
@@ -117,7 +157,7 @@ function createSeedDb() {
     name: "Siri Priya",
     email: "siri.priya@annamacharya.edu.in",
     username: "siri.priya",
-    phone: "+91 91234 56780",
+    phone: "9123456780",
     department: "Computer Science & Engineering",
     status: "active",
     createdAt,
@@ -129,7 +169,7 @@ function createSeedDb() {
     name: "Dr. Kavya Reddy",
     email: "faculty@annamacharya.edu.in",
     username: "dr.kavya",
-    phone: "+91 98480 11223",
+    phone: "9848011223",
     department: "Computer Science & Engineering",
     status: "active",
     createdAt,
@@ -141,7 +181,7 @@ function createSeedDb() {
     name: "Dr. Raghavendra Rao",
     email: "hod@annamacharya.edu.in",
     username: "cse.hod",
-    phone: "+91 97000 44556",
+    phone: "9700044556",
     department: "Computer Science & Engineering",
     status: "active",
     createdAt,
@@ -154,7 +194,7 @@ function createSeedDb() {
       version: "1.0.0",
       createdAt
     },
-    users: [studentUser, studentUser2, facultyUser, hodUser],
+    users: [adminUser, studentUser, studentUser2, facultyUser, hodUser],
     students: [
       {
         id: "stu-demo-001",
@@ -283,12 +323,40 @@ async function readDb() {
   const db = JSON.parse(raw);
   if (!Array.isArray(db.auditLogs)) db.auditLogs = [];
   if (!Array.isArray(db.notifications)) db.notifications = [];
+  if (migrateDb(db)) await writeDb(db);
   return db;
 }
 
 async function writeDb(db) {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(DATA_FILE, JSON.stringify(db, null, 2));
+}
+
+function migrateDb(db) {
+  let changed = false;
+  db.users ||= [];
+  db.students ||= [];
+  db.faculty ||= [];
+  if (!db.users.some((user) => user.role === "admin")) {
+    db.users.unshift(createAdminUser());
+    changed = true;
+  }
+  if (db.students.some((student) => student.userId === "usr-student-sample-2") && !db.users.some((user) => user.id === "usr-student-sample-2")) {
+    db.users.push({
+      id: "usr-student-sample-2",
+      role: "student",
+      name: "Siri Priya",
+      email: "siri.priya@annamacharya.edu.in",
+      username: "siri.priya",
+      phone: "9123456780",
+      department: "Computer Science & Engineering",
+      status: "active",
+      createdAt: now(),
+      passwordHash: hashPassword("Student123")
+    });
+    changed = true;
+  }
+  return changed;
 }
 
 function parseCookies(header = "") {
@@ -462,6 +530,36 @@ function buildDashboard(db, user) {
     };
   }
 
+  if (user.role === "admin") {
+    const students = db.students.map((student) => enrichStudent(db, student));
+    return {
+      role: user.role,
+      user: publicUser(user),
+      users: db.users.map((entry) => publicUser(entry)),
+      students,
+      faculty: db.faculty.map((item) => enrichFaculty(db, item)),
+      stats: {
+        ...buildStats(db, students),
+        users: db.users.length,
+        activeUsers: db.users.filter((entry) => entry.status === "active").length,
+        notifications: db.notifications.length
+      },
+      database: {
+        file: "data/db.json",
+        storage: "Local JSON database",
+        records: {
+          users: db.users.length,
+          students: db.students.length,
+          faculty: db.faculty.length,
+          notifications: db.notifications.length,
+          auditLogs: db.auditLogs.length
+        }
+      },
+      notifications: notificationsFor(db, user),
+      auditLogs: db.auditLogs.slice(-20).reverse()
+    };
+  }
+
   const students = db.students.map((student) => enrichStudent(db, student));
   return {
     role: user.role,
@@ -525,9 +623,13 @@ async function register(req, res, db) {
   const password = cleanText(body.password);
   const confirmPassword = cleanText(body.confirmPassword);
   const department = cleanText(body.department);
+  const phone = normalizePhone(body.phone);
 
   if (!name || !email || !username || !password || !department) {
     return sendJson(res, 400, { message: "Please fill all required fields." });
+  }
+  if (!isTenDigitPhone(phone)) {
+    return sendJson(res, 400, { message: "Phone number must be exactly 10 digits." });
   }
   if (password.length < 6) {
     return sendJson(res, 400, { message: "Password must be at least 6 characters." });
@@ -555,7 +657,7 @@ async function register(req, res, db) {
     name,
     email,
     username,
-    phone: cleanText(body.phone),
+    phone,
     department,
     status: "active",
     createdAt: now(),
@@ -682,7 +784,10 @@ async function updateFaculty(req, res, db, user, facultyId) {
   const body = await readJson(req);
 
   if (facultyUser) {
-    facultyUser.phone = cleanText(body.phone || facultyUser.phone);
+    if (body.phone !== undefined && !isTenDigitPhone(body.phone)) {
+      return sendJson(res, 400, { message: "Phone number must be exactly 10 digits." });
+    }
+    facultyUser.phone = body.phone !== undefined ? normalizePhone(body.phone) : facultyUser.phone;
     facultyUser.status = ["active", "inactive"].includes(cleanText(body.status)) ? cleanText(body.status) : facultyUser.status;
   }
   faculty.qualification = cleanText(body.qualification || faculty.qualification);
@@ -726,30 +831,30 @@ async function handleApi(req, res) {
     return sendJson(res, 200, buildDashboard(db, user));
   }
   if (method === "GET" && pathname === "/api/students") {
-    requireUser(req, db, ["faculty", "hod"]);
+    requireUser(req, db, ["faculty", "hod", "admin"]);
     const students = db.students
-      .filter((student) => user.role === "hod" || student.department === user.department)
+      .filter((student) => user.role === "hod" || user.role === "admin" || student.department === user.department)
       .map((student) => enrichStudent(db, student));
     return sendJson(res, 200, { students });
   }
   if (method === "PATCH" && /^\/api\/students\/[^/]+\/academics$/.test(pathname)) {
-    requireUser(req, db, ["faculty", "hod"]);
+    requireUser(req, db, ["faculty", "hod", "admin"]);
     const studentId = decodeURIComponent(pathname.split("/")[3]);
     return updateStudentAcademics(req, res, db, user, studentId);
   }
   if (method === "GET" && pathname === "/api/faculty") {
-    requireUser(req, db, ["hod"]);
+    requireUser(req, db, ["hod", "admin"]);
     return sendJson(res, 200, { faculty: db.faculty.map((item) => enrichFaculty(db, item)) });
   }
   if (method === "PATCH" && /^\/api\/faculty\/[^/]+$/.test(pathname)) {
-    requireUser(req, db, ["hod"]);
+    requireUser(req, db, ["hod", "admin"]);
     const facultyId = decodeURIComponent(pathname.split("/")[3]);
     return updateFaculty(req, res, db, user, facultyId);
   }
   if (method === "GET" && pathname === "/api/reports/students.csv") {
-    requireUser(req, db, ["faculty", "hod"]);
+    requireUser(req, db, ["faculty", "hod", "admin"]);
     const students = db.students
-      .filter((student) => user.role === "hod" || student.department === user.department)
+      .filter((student) => user.role === "hod" || user.role === "admin" || student.department === user.department)
       .map((student) => enrichStudent(db, student));
     return sendText(res, 200, studentsToCsv(students), {
       "Content-Type": "text/csv; charset=utf-8",

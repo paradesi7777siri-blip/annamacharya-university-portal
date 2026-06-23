@@ -16,8 +16,11 @@ const state = {
 const roleMeta = {
   student: { label: "Student", icon: "school", line: "Profile, attendance, marks and CGPA." },
   faculty: { label: "Faculty", icon: "co_present", line: "Update students in your department." },
-  hod: { label: "HOD", icon: "admin_panel_settings", line: "Oversee faculty and student records." }
+  hod: { label: "HOD", icon: "admin_panel_settings", line: "Oversee faculty and student records." },
+  admin: { label: "Admin", icon: "lock_person", line: "Private system control and database overview." }
 };
+
+const publicRoles = ["student", "faculty", "hod"];
 
 function html(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -33,6 +36,10 @@ function icon(name) {
   return `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
 }
 
+function logo(name = "logo1.jpeg", extraClass = "") {
+  return `<img class="seal ${extraClass}" src="/assets/${name}" alt="Annamacharya official logo" />`;
+}
+
 function initials(name = "AU") {
   return name
     .split(/\s+/)
@@ -45,6 +52,16 @@ function initials(name = "AU") {
 function formatDate(value) {
   if (!value) return "Not available";
   return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function digitsOnly(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 10);
+}
+
+function phoneAttrs(value = "", required = true) {
+  const requiredAttr = required ? "required" : "";
+  const valueAttr = value ? `value="${html(digitsOnly(value))}"` : "";
+  return `type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" ${requiredAttr} ${valueAttr} placeholder="10 digit mobile number"`;
 }
 
 function noticeHtml() {
@@ -102,7 +119,7 @@ function renderLanding() {
     <div class="landing">
       <header class="landing-bar">
         <div class="brand">
-          <div class="seal">AU</div>
+          ${logo("logo1.jpeg")}
           <div>
             <strong>Annamacharya University</strong>
             <span>Management Portal</span>
@@ -112,11 +129,12 @@ function renderLanding() {
           <a href="#about">About</a>
           <a href="#academics">Academics</a>
           <a href="#support">Support</a>
+          <button class="nav-admin" data-open-auth data-role="admin">${icon("lock")} Admin</button>
         </nav>
       </header>
       <main class="hero">
         <div class="hero-inner">
-          <div class="seal hero-seal">AU</div>
+          ${logo("logo2.jpeg", "hero-seal")}
           <h1>Annamacharya University</h1>
           <p>Student, Faculty and HOD Management Portal</p>
           <div class="hero-rule"></div>
@@ -171,7 +189,7 @@ function field(label, name, attrs = "", full = false) {
 function loginFields() {
   return `
     <div class="form-grid">
-      ${field("Email or Username", "identifier", "required autocomplete=\"username\" placeholder=\"student@annamacharya.edu.in\"", true)}
+      ${field("Email or Username", "identifier", `required autocomplete="username" placeholder="${state.role === "admin" ? "admin@annamacharya.edu.in" : "student@annamacharya.edu.in"}"`, true)}
       ${field("Password", "password", "type=\"password\" required autocomplete=\"current-password\" placeholder=\"Enter password\"", true)}
     </div>
   `;
@@ -183,7 +201,7 @@ function registerFields() {
       ${field("Full Name", "name", "required placeholder=\"Enter full name\"")}
       ${field("Email", "email", "type=\"email\" required placeholder=\"name@annamacharya.edu.in\"")}
       ${field("Username", "username", "required placeholder=\"Choose username\"")}
-      ${field("Phone Number", "phone", "type=\"tel\" required placeholder=\"+91\"")}
+      ${field("Phone Number", "phone", phoneAttrs())}
       <label class="field">
         <span>Department</span>
         <select name="department" required>
@@ -245,12 +263,17 @@ function registerFields() {
 }
 
 function renderAuth() {
+  if (state.role === "admin") state.mode = "login";
   const meta = roleMeta[state.role];
+  const authRoles = state.role === "admin" ? ["admin"] : publicRoles;
+  const authCopy = state.role === "admin"
+    ? "Admin access is private and protected by admin credentials. Registration is disabled for this workspace."
+    : `${html(meta.line)} Registration for faculty and HOD workspaces is protected with official verification codes.`;
   app.innerHTML = `
     <div class="auth-page">
       <header class="auth-topbar">
         <div class="brand">
-          <div class="seal">AU</div>
+          ${logo("logo1.jpeg")}
           <div>
             <strong>Annamacharya University</strong>
             <span>${meta.label} Access</span>
@@ -260,27 +283,33 @@ function renderAuth() {
       </header>
       <main class="auth-layout">
         <section class="auth-visual">
-          <div class="seal">AU</div>
+          ${logo("logo1.jpeg")}
           <h1>Academic Portal</h1>
-          <p>${html(meta.line)} Registration for faculty and HOD workspaces is protected with official verification codes.</p>
+          <p>${authCopy}</p>
           <div class="role-stack">
-            ${Object.entries(roleMeta).map(([role, item]) => `
+            ${publicRoles.map((role) => {
+              const item = roleMeta[role];
+              return `
               <button class="role-card" data-role="${role}">
                 ${icon(item.icon)}
                 <span><strong>${item.label}</strong><span>${item.line}</span></span>
               </button>
-            `).join("")}
+            `;
+            }).join("")}
           </div>
         </section>
         <section class="auth-panel">
           <div class="tabs">
-            ${Object.entries(roleMeta).map(([role, item]) => `
+            ${authRoles.map((role) => {
+              const item = roleMeta[role];
+              return `
               <button class="tab ${state.role === role ? "active" : ""}" data-role-tab="${role}">${icon(item.icon)} ${item.label}</button>
-            `).join("")}
+            `;
+            }).join("")}
           </div>
-          <div class="mode-tabs">
+          <div class="mode-tabs ${state.role === "admin" ? "single" : ""}">
             <button class="tab ${state.mode === "login" ? "active" : ""}" data-mode="login">${icon("login")} Login</button>
-            <button class="tab ${state.mode === "register" ? "active" : ""}" data-mode="register">${icon("how_to_reg")} Register</button>
+            ${state.role === "admin" ? "" : `<button class="tab ${state.mode === "register" ? "active" : ""}" data-mode="register">${icon("how_to_reg")} Register</button>`}
           </div>
           ${noticeHtml()}
           <div class="form-title">
@@ -306,6 +335,7 @@ function attachAuthEvents() {
   document.querySelectorAll("[data-role], [data-role-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.role = button.dataset.role || button.dataset.roleTab;
+      if (state.role === "admin") state.mode = "login";
       state.notice = null;
       renderAuth();
     });
@@ -317,6 +347,7 @@ function attachAuthEvents() {
       renderAuth();
     });
   });
+  bindPhoneInputs();
   document.getElementById("auth-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -344,6 +375,15 @@ function attachAuthEvents() {
   });
 }
 
+function bindPhoneInputs() {
+  document.querySelectorAll("input[name='phone']").forEach((input) => {
+    input.value = digitsOnly(input.value);
+    input.addEventListener("input", () => {
+      input.value = digitsOnly(input.value);
+    });
+  });
+}
+
 function navItems() {
   if (!state.user) return [];
   if (state.user.role === "student") {
@@ -358,6 +398,14 @@ function navItems() {
       { id: "overview", label: "Overview", icon: "dashboard" },
       { id: "students", label: "Student Records", icon: "person_search" },
       { id: "reports", label: "Reports", icon: "download" }
+    ];
+  }
+  if (state.user.role === "admin") {
+    return [
+      { id: "overview", label: "Admin Overview", icon: "admin_panel_settings" },
+      { id: "users", label: "Users", icon: "manage_accounts" },
+      { id: "database", label: "Database", icon: "database" },
+      { id: "activity", label: "Activity", icon: "monitoring" }
     ];
   }
   return [
@@ -375,7 +423,7 @@ function renderDashboard() {
     <div class="workspace">
       <aside class="sidebar">
         <div class="brand">
-          <div class="seal">AU</div>
+          ${logo("logo1.jpeg")}
           <div>
             <strong>Annamacharya</strong>
             <span>${meta.label} Workspace</span>
@@ -429,6 +477,7 @@ function progress(label, value, max = 100, suffix = "%") {
 function renderDashboardContent() {
   if (state.user.role === "student") return studentContent();
   if (state.user.role === "faculty") return facultyContent();
+  if (state.user.role === "admin") return adminContent();
   return hodContent();
 }
 
@@ -570,6 +619,77 @@ function hodContent() {
   `;
 }
 
+function adminContent() {
+  if (state.view === "users") return adminUsers();
+  if (state.view === "database") return adminDatabase();
+  if (state.view === "activity") return activityPanel();
+  const stats = state.dashboard.stats;
+  return `
+    <section class="stats-grid">
+      ${metric("Total Users", stats.users, "manage_accounts")}
+      ${metric("Active Users", stats.activeUsers, "verified_user")}
+      ${metric("Students", stats.students, "groups")}
+      ${metric("Faculty", state.dashboard.faculty.length, "co_present")}
+    </section>
+    <section class="section-grid">
+      <div class="panel">
+        <div class="section-title"><div><h2>Private Admin Control</h2><p>Only admin credentials can open this workspace.</p></div></div>
+        ${adminUserTable((state.dashboard.users || []).slice(0, 8))}
+      </div>
+      <div class="panel">
+        <div class="section-title"><div><h2>Database Setup</h2><p>${html(state.dashboard.database.storage)}</p></div></div>
+        ${Object.entries(state.dashboard.database.records).map(([key, value]) => info(key, value)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function adminUsers() {
+  return `
+    <section class="panel">
+      <div class="section-title"><div><h2>User Access</h2><p>All registered portal accounts</p></div></div>
+      ${adminUserTable(state.dashboard.users || [])}
+    </section>
+  `;
+}
+
+function adminUserTable(users) {
+  return `
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Department</th><th>Phone</th><th>Status</th></tr></thead>
+        <tbody>
+          ${users.map((user) => `
+            <tr>
+              <td>${html(user.name)}</td>
+              <td><span class="pill ${user.role === "admin" ? "danger" : "good"}">${html(user.role)}</span></td>
+              <td>${html(user.email)}</td>
+              <td>${html(user.department)}</td>
+              <td>${html(user.phone || "Not added")}</td>
+              <td>${html(user.status)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function adminDatabase() {
+  const database = state.dashboard.database;
+  return `
+    <section class="panel">
+      <div class="section-title"><div><h2>Database Setup</h2><p>${html(database.file)} · ${html(database.storage)}</p></div></div>
+      <div class="info-grid">
+        ${Object.entries(database.records).map(([key, value]) => info(key, value)).join("")}
+      </div>
+      <div class="form-actions">
+        <a class="btn primary" href="/api/reports/students.csv">${icon("download")} Download Student CSV</a>
+      </div>
+    </section>
+  `;
+}
+
 function statusPill(value) {
   const number = Number(value);
   const klass = number >= 80 ? "good" : number >= 65 ? "warn" : "danger";
@@ -701,7 +821,7 @@ function facultyEditor(faculty) {
     </div>
     <form id="faculty-update-form" data-id="${html(faculty.id)}">
       <div class="form-grid">
-        ${field("Phone", "phone", `value="${html(faculty.phone)}"`)}
+        ${field("Phone", "phone", phoneAttrs(faculty.phone))}
         ${field("Qualification", "qualification", `value="${html(faculty.qualification)}"`)}
         ${field("Experience", "experience", `value="${html(faculty.experience)}"`, true)}
         ${field("Assigned Years", "assignedYears", `value="${html((faculty.assignedYears || []).join(", "))}"`, true)}
@@ -773,6 +893,7 @@ function attachDashboardEvents() {
     state.search = event.target.value;
     renderDashboard();
   });
+  bindPhoneInputs();
   document.querySelectorAll("[data-edit-student]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedStudentId = button.dataset.editStudent;

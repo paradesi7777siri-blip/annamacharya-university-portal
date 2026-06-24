@@ -135,6 +135,35 @@ Important: the built-in JSON database is best for demo deployment. For a real pu
 
 Other options: Koyeb, Railway, Fly.io, or any VPS with Node 18+ can also run it with the same start command.
 
+### Render troubleshooting
+
+If Render shows this error:
+
+```text
+Could not open requirements file: requirements.txt
+```
+
+Render is treating the project like Python or has the wrong build command. Fix the service settings:
+
+- Runtime: `Node`
+- Build Command: `npm install`
+- Start Command: `node server.js`
+- Node version: `22`
+
+The repo also includes `render.yaml`, so you can deploy from Render Blueprint if you want Render to read these settings automatically.
+
+If Render auto-generates `ADMIN_KEY` from `render.yaml` and you cannot view it, create your own key locally:
+
+```bash
+npm run admin:key
+```
+
+Then paste that value into Render as:
+
+```text
+ADMIN_KEY=your_generated_key
+```
+
 ## Supabase setup steps
 
 Use Supabase when you are ready to replace `data/db.json` with hosted server-side data.

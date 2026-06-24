@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: annamacharya-university-portal
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: FACULTY_REGISTRATION_CODE
+        value: FAC-AU-2026
+      - key: HOD_REGISTRATION_CODE
+        value: HOD-AU-2026
+      - key: ADMIN_KEY
+        generateValue: true
